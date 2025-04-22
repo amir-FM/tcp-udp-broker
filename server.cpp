@@ -1,13 +1,16 @@
 #include <iostream>
+#include <vector>
 #include <cstdint>
 #include <cstring>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <poll.h>
 #include "helper.h"
 
 #define DEBUG 1
+#define MAX_CONNECTIONS 10
 
 using namespace std;
 
@@ -62,7 +65,7 @@ private:
 		rc = bind(tcpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
 		DIE(rc < 0, "bind");
 
-		rc = listen(tcpfd, 1);
+		rc = listen(tcpfd, MAX_CONNECTIONS);
 		DIE(rc < 0, "listen");
 
 		if(DEBUG)cout << "Started TCP server\n";
@@ -135,11 +138,13 @@ private:
 
 class TCP_Connect{
 public:
+	TCP_Connect(){};
+
 	TCP_Connect(int listenfd){
 		this->listenfd = listenfd;
 	}
 
-	void new_connection(){
+	int new_connection(){
 		struct sockaddr_in cli_addr;
 		socklen_t cli_len = sizeof(cli_addr);
 
@@ -147,10 +152,18 @@ public:
 		DIE(newsockfd < 0, "accept");
 
 		cout << "New connection from " << inet_ntoa(cli_addr.sin_addr) << " at " << ntohs(cli_addr.sin_port) << "\n";
+
+		return newsockfd;
 	}
 
 	void close_connection(){
 		close(newsockfd);
+		if(DEBUG)cout << "closed: " << newsockfd << endl;
+	}
+
+	void close_connection(int fd){
+		close(fd);
+		if(DEBUG)cout << "closed: " << fd << endl;
 	}
 
 	void recv_and_print(){
@@ -163,15 +176,42 @@ public:
 			cout << packet << "\n---------------\n\n";
 	}
 
-	void recv_and_back(){
+	int recv_and_back(){
 		int rc;
 		uint8_t packet[1500];
 
 		rc = recv(newsockfd, &packet, sizeof(packet), 0);
 		DIE(rc < 0, "recv");
 
+		if(rc == 0){
+			close_connection();
+			return -2;
+		}
+
 		rc = send(newsockfd, &packet, rc, 0);
 		DIE(rc < 0, "send");
+		return 0;
+	}
+
+	int recv_and_back(int fd){
+		int rc;
+		uint8_t packet[1500];
+
+		rc = recv(fd, &packet, sizeof(packet), 0);
+		DIE(rc < 0, "recv");
+
+		if(rc == 0){
+			close_connection(fd);
+			return -2;
+		}
+
+		rc = send(fd, &packet, rc, 0);
+		DIE(rc < 0, "send");
+		return 0;
+	}
+
+	int get_listenfd(){
+		return listenfd;
 	}
 	
 private:
@@ -180,16 +220,65 @@ private:
 
 };
 
+class Multiplexer{
+public:
+	Multiplexer(TCP_Connect t){
+		this->t = t;
+		this->listenfd = t.get_listenfd();
+		add_fd(this->listenfd);
+
+		num_sockets = 1;
+	}
+
+	void poll_wait(){
+		int rc = poll(poll_fds.data(), num_sockets, -1);
+		DIE(rc < 0, "poll");
+	}
+
+	void add_fd(int fd){
+		struct pollfd p = {.fd = fd, .events = POLLIN};
+		poll_fds.push_back(p);
+		num_sockets++;
+		if(DEBUG)cout << "added: " << fd << endl;
+	}
+
+	void remove_fd(int index){
+		int fd = poll_fds[index].fd;
+		poll_fds.erase(poll_fds.begin() + index);
+		if(DEBUG)cout << "Removed: " << fd << endl;
+	}
+
+	void check_events(){
+		for(int i = 0; i < num_sockets; i++){
+			if(poll_fds[i].revents & POLLIN){
+				if(poll_fds[i].fd == listenfd){
+					add_fd(t.new_connection());
+				}else{
+					int rc = t.recv_and_back(poll_fds[i].fd);
+					if(rc == -2)remove_fd(i);
+				}
+				break;
+			}
+		}
+	}
+
+private:
+	TCP_Connect t;
+	vector<struct pollfd> poll_fds;
+	int listenfd;
+	int num_sockets;
+};
+
 int main(int argc, char *argv[]){
 	Server s(argv[1]);
 	s.start();
 
 	UDP_Connect u(s.get_udp_fd());
 	TCP_Connect t(s.get_tcp_fd());
-
-	t.new_connection();
+	Multiplexer x(t);
 
 	while(1){
-		t.recv_and_back();
-	};
+		x.poll_wait();
+		x.check_events();
+	}
 }
