@@ -10,12 +10,18 @@
 
 using namespace std;
 
+struct UDP_Message{
+	uint8_t topic[50];
+	uint8_t type;
+	uint8_t data[1500];
+}; 
+
 class Server{
 public:
 	uint16_t port;
 
-	Server(uint16_t port){
-		this->port = port;
+	Server(string port){
+		this->port = stoi(port);
 	}
 
 	void start(){
@@ -101,24 +107,30 @@ public:
 	}
 
 	int recv_and_print(){
+		clean_message();
+
 		struct sockaddr_in cl_addr;
 		socklen_t clen = sizeof(cl_addr);
 
-		int rc = recvfrom(listenfd, packet, sizeof(packet), 0, (struct sockaddr *)&cl_addr, &clen);
+		int rc = recvfrom(listenfd, &message, sizeof(struct UDP_Message), 0, (struct sockaddr *)&cl_addr, &clen);
 		
 		if(rc > 0)
-			cout << packet << "\n\n";
+			cout << message.topic << " " << message.type << "\n" << message.data<< "\n------------------------------------\n\n";
 
 		return rc;
 	}
 
 private:
 	int listenfd;
-	char packet[1600];
+	struct UDP_Message message;
+
+	void clean_message(){
+		memset(&message, 0, sizeof(struct UDP_Message));
+	}
 };
 
 int main(int argc, char *argv[]){
-	Server s(8080);
+	Server s(argv[1]);
 	s.start();
 
 	UDP_Connect u(s.get_udp_fd());
