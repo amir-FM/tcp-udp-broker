@@ -4,6 +4,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 #include "helper.h"
 
 #define DEBUG 1
@@ -59,8 +60,11 @@ private:
 		set_serv_addr();
 
 		rc = bind(tcpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
-
 		DIE(rc < 0, "bind");
+
+		rc = listen(tcpfd, 1);
+		DIE(rc < 0, "listen");
+
 		if(DEBUG)cout << "Started TCP server\n";
 	}
 
@@ -129,13 +133,52 @@ private:
 	}
 };
 
+class TCP_Connect{
+public:
+	TCP_Connect(int listenfd){
+		this->listenfd = listenfd;
+	}
+
+	void new_connection(){
+		struct sockaddr_in cli_addr;
+		socklen_t cli_len = sizeof(cli_addr);
+
+		newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
+		DIE(newsockfd < 0, "accept");
+
+		cout << "New connection from " << inet_ntoa(cli_addr.sin_addr) << " at " << ntohs(cli_addr.sin_port) << "\n";
+	}
+
+	void close_connection(){
+		close(newsockfd);
+	}
+
+	void recv_and_print(){
+		uint8_t packet[1500];
+
+		int rc = recv(newsockfd, &packet, sizeof(packet), 0);
+		DIE(rc < 0, "recv");
+
+		if(rc)
+			cout << packet << "\n---------------\n\n";
+	}
+	
+private:
+	int listenfd;
+	int newsockfd;
+
+};
+
 int main(int argc, char *argv[]){
 	Server s(argv[1]);
 	s.start();
 
 	UDP_Connect u(s.get_udp_fd());
+	TCP_Connect t(s.get_tcp_fd());
+
+	t.new_connection();
 
 	while(1){
-		u.recv_and_print();
+		t.recv_and_print();
 	};
 }
