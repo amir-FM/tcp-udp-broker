@@ -162,6 +162,17 @@ public:
 		if(rc)
 			cout << packet << "\n---------------\n\n";
 	}
+
+	void recv_and_back(){
+		int rc;
+		uint8_t packet[1500];
+
+		rc = recv(newsockfd, &packet, sizeof(packet), 0);
+		DIE(rc < 0, "recv");
+
+		rc = send(newsockfd, &packet, rc, 0);
+		DIE(rc < 0, "send");
+	}
 	
 private:
 	int listenfd;
@@ -179,6 +190,6 @@ int main(int argc, char *argv[]){
 	t.new_connection();
 
 	while(1){
-		t.recv_and_print();
+		t.recv_and_back();
 	};
 }
