@@ -109,22 +109,44 @@ private:
 
 class UDP_Connect{
 public:
+	UDP_Connect(){}
+
 	UDP_Connect(int listenfd){
 		this->listenfd = listenfd;
 	}
 
-	int recv_and_print(){
+	//int recv_and_print(){
+	//	clean_message();
+
+	//	struct sockaddr_in cl_addr;
+	//	socklen_t clen = sizeof(cl_addr);
+
+	//	int rc = recvfrom(listenfd, &message, sizeof(struct udp_message), 0, (struct sockaddr *)&cl_addr, &clen);
+	//	
+	//	if(rc > 0)
+	//		cout << message.topic << " " << message.type << "\n" << message.data<< "\n------------------------------------\n\n";
+
+	//	return rc;
+	//}
+
+	int recv(){
 		clean_message();
 
 		struct sockaddr_in cl_addr;
 		socklen_t clen = sizeof(cl_addr);
 
 		int rc = recvfrom(listenfd, &message, sizeof(struct UDP_Message), 0, (struct sockaddr *)&cl_addr, &clen);
+		if(DEBUG)cout << "Recv UDP: " << rc << "bytes\n";
 		
-		if(rc > 0)
-			cout << message.topic << " " << message.type << "\n" << message.data<< "\n------------------------------------\n\n";
-
 		return rc;
+	}
+
+	struct UDP_Message get_message(){
+		return message;
+	}
+
+	int get_listenfd(){
+		return listenfd;
 	}
 
 private:
@@ -210,6 +232,15 @@ public:
 		return 0;
 	}
 
+	void send_message(int fd, struct UDP_Message message){
+		int rc;
+
+		rc = send(fd, &message, sizeof(struct UDP_Message), 0);
+		DIE(rc < 0, "send");
+
+		if(DEBUG)cout << "Sent message to " << fd << endl;
+	}
+
 	int get_listenfd(){
 		return listenfd;
 	}
@@ -224,10 +255,18 @@ class Multiplexer{
 public:
 	Multiplexer(TCP_Connect t){
 		this->t = t;
-		this->listenfd = t.get_listenfd();
-		add_fd(this->listenfd);
+		this->tcpfd = t.get_listenfd();
+		add_fd(this->tcpfd);
 
 		num_sockets = 1;
+	}
+
+	void add_udp(UDP_Connect u){
+		this->u = u;
+		this->udpfd = u.get_listenfd();
+		add_fd(this->udpfd);
+
+		num_sockets++;
 	}
 
 	void poll_wait(){
@@ -251,8 +290,11 @@ public:
 	void check_events(){
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
-				if(poll_fds[i].fd == listenfd){
+				if(poll_fds[i].fd == tcpfd){
 					add_fd(t.new_connection());
+				}else if(poll_fds[i].fd == udpfd){
+					u.recv();
+					send_all(u.get_message());
 				}else{
 					int rc = t.recv_and_back(poll_fds[i].fd);
 					if(rc == -2)remove_fd(i);
@@ -262,10 +304,17 @@ public:
 		}
 	}
 
+	void send_all(struct UDP_Message message){
+		for(auto it : poll_fds)
+			if(it.fd != tcpfd && it.fd != udpfd)
+				t.send_message(it.fd, message);
+	}
+
 private:
 	TCP_Connect t;
+	UDP_Connect u;
 	vector<struct pollfd> poll_fds;
-	int listenfd;
+	int tcpfd, udpfd;
 	int num_sockets;
 };
 
@@ -276,6 +325,7 @@ int main(int argc, char *argv[]){
 	UDP_Connect u(s.get_udp_fd());
 	TCP_Connect t(s.get_tcp_fd());
 	Multiplexer x(t);
+	x.add_udp(u);
 
 	while(1){
 		x.poll_wait();
