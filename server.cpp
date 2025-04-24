@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <set>
+#include <map>
 #include <cstdint>
 #include <cstring>
 #include <sys/socket.h>
@@ -8,17 +10,12 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include "helper.h"
+#include "protocols.h"
 
 #define DEBUG 1
-#define MAX_CONNECTIONS 10
+#define MAX_CONNECTIONS 1000
 
 using namespace std;
-
-struct UDP_Message{
-	uint8_t topic[50];
-	uint8_t type;
-	uint8_t data[1500];
-}; 
 
 class Server{
 public:
@@ -132,7 +129,6 @@ public:
 	int recv(){
 		clean_message();
 
-		struct sockaddr_in cl_addr;
 		socklen_t clen = sizeof(cl_addr);
 
 		int rc = recvfrom(listenfd, &message, sizeof(struct UDP_Message), 0, (struct sockaddr *)&cl_addr, &clen);
@@ -145,6 +141,14 @@ public:
 		return message;
 	}
 
+	uint32_t get_client_ip(){
+		return cl_addr.sin_addr.s_addr;
+	}
+
+	uint16_t get_client_port(){
+		return cl_addr.sin_port;
+	}
+
 	int get_listenfd(){
 		return listenfd;
 	}
@@ -152,6 +156,7 @@ public:
 private:
 	int listenfd;
 	struct UDP_Message message;
+	struct sockaddr_in cl_addr;
 
 	void clean_message(){
 		memset(&message, 0, sizeof(struct UDP_Message));
@@ -173,7 +178,7 @@ public:
 		newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
 		DIE(newsockfd < 0, "accept");
 
-		cout << "New connection from " << inet_ntoa(cli_addr.sin_addr) << " at " << ntohs(cli_addr.sin_port) << "\n";
+		cout << "New client <CL-ID> connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << "\n";
 
 		return newsockfd;
 	}
@@ -185,7 +190,7 @@ public:
 
 	void close_connection(int fd){
 		close(fd);
-		if(DEBUG)cout << "closed: " << fd << endl;
+		if(DEBUG)cout << "Client <CL-ID> disconnected: " << fd << endl;
 	}
 
 	void recv_and_print(){
@@ -232,10 +237,19 @@ public:
 		return 0;
 	}
 
-	void send_message(int fd, struct UDP_Message message){
+	//void send_message(int fd, struct UDP_Message message){
+	//	int rc;
+
+	//	rc = send(fd, &message, sizeof(struct UDP_Message), 0);
+	//	DIE(rc < 0, "send");
+
+	//	if(DEBUG)cout << "Sent message to " << fd << endl;
+	//}
+
+	void send_topic_message(int fd, struct topic_message message){
 		int rc;
 
-		rc = send(fd, &message, sizeof(struct UDP_Message), 0);
+		rc = send(fd, &message, sizeof(message), 0);
 		DIE(rc < 0, "send");
 
 		if(DEBUG)cout << "Sent message to " << fd << endl;
@@ -305,9 +319,19 @@ public:
 	}
 
 	void send_all(struct UDP_Message message){
+		struct topic_message payload = wrap_message(message);
+		cout << "wrapped message: " << payload.ip_udp << " " << payload.port_udp << " " << payload.message.topic << " " << payload.message.type << " " << payload.message.data << endl;
+
 		for(auto it : poll_fds)
 			if(it.fd != tcpfd && it.fd != udpfd)
-				t.send_message(it.fd, message);
+				t.send_topic_message(it.fd, payload);
+	}
+
+	struct topic_message wrap_message(struct UDP_Message message){
+		struct topic_message payload = {.ip_udp = u.get_client_ip(), .port_udp = u.get_client_port(), .message = message};
+
+		//memcpy(&payload.message, &message, sizeof(struct UDP_Message));
+		return payload;
 	}
 
 private:
@@ -332,3 +356,4 @@ int main(int argc, char *argv[]){
 		x.check_events();
 	}
 }
+
