@@ -258,6 +258,15 @@ public:
 	int get_listenfd(){
 		return listenfd;
 	}
+
+	void recv_id(int fd){
+		struct subscribe_message message;
+
+		int rc = recv(fd, &message, sizeof(message), 0);
+		DIE(rc < 0, "recv");
+
+		cout << "recv subs id: " << message.clid << endl;
+	}
 	
 private:
 	int listenfd;
@@ -310,7 +319,9 @@ public:
 					u.recv();
 					send_all(u.get_message());
 				}else{
-					int rc = t.recv_and_back(poll_fds[i].fd);
+					//int rc = t.recv_and_back(poll_fds[i].fd);
+					t.recv_id(poll_fds[i].fd);
+					int rc = 0;
 					if(rc == -2)remove_fd(i);
 				}
 				break;
@@ -330,7 +341,6 @@ public:
 	struct topic_message wrap_message(struct UDP_Message message){
 		struct topic_message payload = {.ip_udp = u.get_client_ip(), .port_udp = u.get_client_port(), .message = message};
 
-		//memcpy(&payload.message, &message, sizeof(struct UDP_Message));
 		return payload;
 	}
 
@@ -340,6 +350,75 @@ private:
 	vector<struct pollfd> poll_fds;
 	int tcpfd, udpfd;
 	int num_sockets;
+};
+
+class Share {
+public:
+	int connect_user(string id, int fd){
+		if(user_in_use(id))
+			return -1;
+
+		users.insert({id, fd});
+		cout << "inserted: " << fd << endl;
+		return 0;
+	}
+
+	int get_fd(string id){
+		try {
+			return users.at(id);
+		}catch(...) {
+			return -1;
+		}
+	}
+
+	int user_in_use(string id){
+		if(users.find(id) == users.end())
+			return 0;
+
+		return users[id] >= 0;
+	}
+	
+	int user_exists(string id){
+		return users.find(id) != users.end();
+	}
+
+	void disconnect_user(string id){
+		users[id] = -1;
+	}
+
+	void print_all_users(){
+		for(auto it : users)
+			cout << it.first << " ";
+		cout << endl;
+	}
+
+	void print_active_users(){
+		for(auto it : users)
+			if(it.second != -1)
+				cout << "(" << it.first << ":" << it.second << ") ";
+		cout << endl;
+	}
+
+	int add_user_to_topic(string topic, string id){
+		if(!user_exists(id))
+			return -1;
+
+		topics[topic].insert(id);
+		return 0;
+	}
+
+	void print_all_topics(){
+		for(auto it : topics){
+			cout << it.first << ": ";
+			for(auto user : it.second)
+				cout << user << " ";
+			cout << endl;
+		}
+	}
+
+private:
+	map<string, int> users;
+	map<string, set<string>> topics;
 };
 
 int main(int argc, char *argv[]){

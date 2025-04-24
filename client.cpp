@@ -27,6 +27,7 @@ public:
 
 	void start(){
 		start_tcp();
+		login();
 	}
 
 	void stop(){
@@ -70,6 +71,13 @@ private:
 
 		int rc = inet_pton(AF_INET, (char*)&ip, &serv_addr.sin_addr.s_addr);
 		DIE(rc < 0, "inet_pton");
+	}
+
+	void login(){
+		struct subscribe_message message = {.flag = 2};
+		strncpy((char *)message.clid, id.data(), id.size());
+		int rc = send(tcpfd, &message, sizeof(message), 0);
+		DIE(rc < 0, "send");
 	}
 };
 
