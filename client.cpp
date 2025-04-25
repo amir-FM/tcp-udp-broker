@@ -111,7 +111,7 @@ private:
 
 };
 
-class Message_Parser {
+class Topic_Message_Parser {
 public:
 	string result;
 
@@ -218,7 +218,7 @@ int main(int argc, char *argv[]){
 	Client c(argv[1], argv[2], argv[3]);
 	c.start();
 	TCP_Connect t(TCP_Connect(c.get_fd()));
-	Message_Parser parser;
+	Topic_Message_Parser parser;
 	while(1){
 		t.recv_message();
 		parser.parse_message(t.get_message());

@@ -17,6 +17,158 @@
 
 using namespace std;
 
+class Share {
+public:
+	int connect_user(string id, int fd){
+		if(user_in_use(id)){
+			cout << "User: " << id << ":" << users[id] << " is in use\n";
+			return -1;
+		}
+
+		//users.insert({id, fd});
+		users[id] = fd;
+		cout << "inserted: " << fd << endl;
+		return 0;
+	}
+
+	int get_fd(string id){
+		try {
+			return users.at(id);
+		}catch(...) {
+			return -1;
+		}
+	}
+
+	int user_in_use(string id){
+		if(users.find(id) == users.end())
+			return 0;
+
+		return users[id] >= 0;
+	}
+	
+	int user_exists(string id){
+		return users.find(id) != users.end();
+	}
+
+	void disconnect_user(string id){
+		users[id] = -1;
+	}
+
+	string disconnect_user(int fd){
+		cout << "caut: " << fd << endl;
+		cout << "dim: " << users.size() << endl;
+		for(auto it : users){
+			cout << "pereche: " << it.first << ":" << it.second << endl;
+			if(it.second == fd){
+				disconnect_user(it.first);
+				return it.first;
+			}
+		}
+		return "NOT SUPPOSED TO ARRIVE HERE";
+	}
+
+	void print_all_users(){
+		for(auto it : users)
+			cout << "(" << it.first << ":" << it.second << ") ";
+		cout << endl;
+	}
+
+	void print_active_users(){
+		for(auto it : users)
+			if(it.second != -1)
+				cout << "(" << it.first << ":" << it.second << ") ";
+		cout << endl;
+	}
+
+	int add_user_to_topic(string topic, string id){
+		if(!user_exists(id))
+			return -1;
+
+		topics[topic].insert(id);
+		return 0;
+	}
+
+	void print_all_topics(){
+		for(auto it : topics){
+			cout << it.first << ": ";
+			for(auto user : it.second)
+				cout << user << " ";
+			cout << endl;
+		}
+	}
+
+private:
+	map<string, int> users;
+	map<string, set<string>> topics;
+};
+
+class Subscribe_Message_Parser {
+public:
+	Subscribe_Message_Parser(){
+		this->s = new Share();
+	}
+
+	void set_message(struct subscribe_message message, int fd){
+		this->message = message;
+		this->fd = fd;
+		get_flag();
+	}
+
+	void get_flag(){
+		this->flag = message.flag;
+	}
+
+	void parse_message(){
+		switch(flag){
+		case 0:
+			break;
+		case 1:
+			break;
+		default:
+			break;
+		}
+	}
+
+	int login(){
+		this->message = message;
+		this->fd = fd;
+
+		get_flag();
+		if(flag != 2){
+			cout << "Message not correct\n";
+			return -1;
+		}
+
+		id = (char *)message.clid;
+		int rc = s->connect_user(id, fd);
+		s->print_all_users();
+
+		if(rc < 0)
+			return rc;
+		return 0;
+	}
+
+	void logout(int fd){
+		cout << "sunt in logout\n";
+		id = s->disconnect_user(fd);
+		s->print_all_users();
+	}
+
+	Share *get_share(){
+		return s;
+	}
+
+	string get_clid(){
+		return id;
+	}
+private:
+	Share *s;
+	struct subscribe_message message;
+	int fd;
+	string id;
+	uint8_t flag;
+};
+
 class Server{
 public:
 	uint16_t port;
@@ -167,57 +319,37 @@ class TCP_Connect{
 public:
 	TCP_Connect(){};
 
-	TCP_Connect(int listenfd){
+	TCP_Connect(int listenfd, Subscribe_Message_Parser &p){
 		this->listenfd = listenfd;
+		this->p = p;
 	}
 
 	int new_connection(){
 		struct sockaddr_in cli_addr;
 		socklen_t cli_len = sizeof(cli_addr);
 
-		newsockfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
-		DIE(newsockfd < 0, "accept");
+		int newfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
+		DIE(newfd < 0, "accept");
 
-		cout << "New client <CL-ID> connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << "\n";
+		//login
+		int rc = recv_smess(newfd);
+		if(rc < 0)return -1;
 
-		return newsockfd;
-	}
+		p.set_message(get_smess(), newfd);
+		rc = p.login();
+		if(rc < 0){
+			close_connection(newfd);
+			return -1;
+		}
 
-	void close_connection(){
-		close(newsockfd);
-		if(DEBUG)cout << "closed: " << newsockfd << endl;
+		cout << "New client " << p.get_clid() << " connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << "\n";
+
+		return newfd;
 	}
 
 	void close_connection(int fd){
 		close(fd);
-		if(DEBUG)cout << "Client <CL-ID> disconnected: " << fd << endl;
-	}
-
-	void recv_and_print(){
-		uint8_t packet[1500];
-
-		int rc = recv(newsockfd, &packet, sizeof(packet), 0);
-		DIE(rc < 0, "recv");
-
-		if(rc)
-			cout << packet << "\n---------------\n\n";
-	}
-
-	int recv_and_back(){
-		int rc;
-		uint8_t packet[1500];
-
-		rc = recv(newsockfd, &packet, sizeof(packet), 0);
-		DIE(rc < 0, "recv");
-
-		if(rc == 0){
-			close_connection();
-			return -2;
-		}
-
-		rc = send(newsockfd, &packet, rc, 0);
-		DIE(rc < 0, "send");
-		return 0;
+		if(DEBUG)cout << "Client " << p.get_clid() << " disconnected: " << fd << endl;
 	}
 
 	int recv_and_back(int fd){
@@ -237,15 +369,6 @@ public:
 		return 0;
 	}
 
-	//void send_message(int fd, struct UDP_Message message){
-	//	int rc;
-
-	//	rc = send(fd, &message, sizeof(struct UDP_Message), 0);
-	//	DIE(rc < 0, "send");
-
-	//	if(DEBUG)cout << "Sent message to " << fd << endl;
-	//}
-
 	void send_topic_message(int fd, struct topic_message message){
 		int rc;
 
@@ -259,19 +382,23 @@ public:
 		return listenfd;
 	}
 
-	void recv_id(int fd){
-		struct subscribe_message message;
-
-		int rc = recv(fd, &message, sizeof(message), 0);
+	int recv_smess(int fd){
+		int rc = recv(fd, &smess, sizeof(smess), 0);
 		DIE(rc < 0, "recv");
+		
+		if(rc == 0)
+			return -1;
+		return 0;
+	}
 
-		cout << "recv subs id: " << message.clid << endl;
+	struct subscribe_message get_smess(){
+		return smess;
 	}
 	
 private:
+	Subscribe_Message_Parser p;
 	int listenfd;
-	int newsockfd;
-
+	struct subscribe_message smess;
 };
 
 class Multiplexer{
@@ -290,6 +417,10 @@ public:
 		add_fd(this->udpfd);
 
 		num_sockets++;
+	}
+
+	void add_subs(Subscribe_Message_Parser &p){
+		this->p = p;
 	}
 
 	void poll_wait(){
@@ -314,15 +445,22 @@ public:
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
 				if(poll_fds[i].fd == tcpfd){
-					add_fd(t.new_connection());
+					int newfd = t.new_connection();
+					if(newfd >= 0)
+						add_fd(newfd);
 				}else if(poll_fds[i].fd == udpfd){
 					u.recv();
 					send_all(u.get_message());
 				}else{
-					//int rc = t.recv_and_back(poll_fds[i].fd);
-					t.recv_id(poll_fds[i].fd);
-					int rc = 0;
-					if(rc == -2)remove_fd(i);
+					int rc = t.recv_smess(poll_fds[i].fd);
+					if(rc == -1){
+						p.logout(poll_fds[i].fd);
+						remove_fd(i);
+						t.close_connection(poll_fds[i].fd);
+						continue;
+					}
+					p.set_message(t.get_smess(), poll_fds[i].fd);
+					p.parse_message();
 				}
 				break;
 			}
@@ -347,88 +485,22 @@ public:
 private:
 	TCP_Connect t;
 	UDP_Connect u;
+	Subscribe_Message_Parser p;
 	vector<struct pollfd> poll_fds;
 	int tcpfd, udpfd;
 	int num_sockets;
-};
-
-class Share {
-public:
-	int connect_user(string id, int fd){
-		if(user_in_use(id))
-			return -1;
-
-		users.insert({id, fd});
-		cout << "inserted: " << fd << endl;
-		return 0;
-	}
-
-	int get_fd(string id){
-		try {
-			return users.at(id);
-		}catch(...) {
-			return -1;
-		}
-	}
-
-	int user_in_use(string id){
-		if(users.find(id) == users.end())
-			return 0;
-
-		return users[id] >= 0;
-	}
-	
-	int user_exists(string id){
-		return users.find(id) != users.end();
-	}
-
-	void disconnect_user(string id){
-		users[id] = -1;
-	}
-
-	void print_all_users(){
-		for(auto it : users)
-			cout << it.first << " ";
-		cout << endl;
-	}
-
-	void print_active_users(){
-		for(auto it : users)
-			if(it.second != -1)
-				cout << "(" << it.first << ":" << it.second << ") ";
-		cout << endl;
-	}
-
-	int add_user_to_topic(string topic, string id){
-		if(!user_exists(id))
-			return -1;
-
-		topics[topic].insert(id);
-		return 0;
-	}
-
-	void print_all_topics(){
-		for(auto it : topics){
-			cout << it.first << ": ";
-			for(auto user : it.second)
-				cout << user << " ";
-			cout << endl;
-		}
-	}
-
-private:
-	map<string, int> users;
-	map<string, set<string>> topics;
 };
 
 int main(int argc, char *argv[]){
 	Server s(argv[1]);
 	s.start();
 
+	Subscribe_Message_Parser p;
 	UDP_Connect u(s.get_udp_fd());
-	TCP_Connect t(s.get_tcp_fd());
+	TCP_Connect t(s.get_tcp_fd(), p);
 	Multiplexer x(t);
 	x.add_udp(u);
+	x.add_subs(p);
 
 	while(1){
 		x.poll_wait();
