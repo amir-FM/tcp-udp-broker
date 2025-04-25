@@ -13,6 +13,7 @@
 #include "protocols.h"
 
 #define DEBUG 1
+#define STDIN 0
 #define MAX_CONNECTIONS 1000
 
 using namespace std;
@@ -25,9 +26,8 @@ public:
 			return -1;
 		}
 
-		//users.insert({id, fd});
 		users[id] = fd;
-		cout << "inserted: " << fd << endl;
+		if(DEBUG)cout << "inserted: " << fd << endl;
 		return 0;
 	}
 
@@ -59,10 +59,10 @@ public:
 	}
 
 	string disconnect_user(int fd){
-		cout << "caut: " << fd << endl;
-		cout << "dim: " << users.size() << endl;
+		if(DEBUG)cout << "caut: " << fd << endl;
+		if(DEBUG)cout << "dim: " << users.size() << endl;
 		for(auto it : users){
-			cout << "pereche: " << it.first << ":" << it.second << endl;
+			if(DEBUG)cout << "pereche: " << it.first << ":" << it.second << endl;
 			if(it.second == fd){
 				disconnect_user(it.first);
 				return it.first;
@@ -71,17 +71,24 @@ public:
 		return "NOT SUPPOSED TO ARRIVE HERE";
 	}
 
+	set<string> *get_subs(string topic){
+		if(!topic_exists(topic))
+			return NULL;
+
+		return &topics[topic];
+	}
+
 	void print_all_users(){
 		for(auto it : users)
-			cout << "(" << it.first << ":" << it.second << ") ";
-		cout << endl;
+			if(DEBUG)cout << "(" << it.first << ":" << it.second << ") ";
+		if(DEBUG)cout << endl;
 	}
 
 	void print_active_users(){
 		for(auto it : users)
 			if(it.second != -1)
-				cout << "(" << it.first << ":" << it.second << ") ";
-		cout << endl;
+				if(DEBUG)cout << "(" << it.first << ":" << it.second << ") ";
+		if(DEBUG)cout << endl;
 	}
 
 	int add_user_to_topic(string topic, string id){
@@ -106,10 +113,10 @@ public:
 
 	void print_all_topics(){
 		for(auto it : topics){
-			cout << it.first << ": ";
+			if(DEBUG)cout << it.first << ": ";
 			for(auto user : it.second)
-				cout << user << " ";
-			cout << endl;
+				if(DEBUG)cout << user << " ";
+			if(DEBUG)cout << endl;
 		}
 	}
 
@@ -130,7 +137,7 @@ public:
 		this->flag = message.flag;
 		this->id = (char *)message.clid;
 		this->topic = (char *)message.data;
-		cout << flag << " " << id << " " << topic << endl;
+		if(DEBUG)cout << flag << " " << id << " " << topic << endl;
 	}
 
 	void parse_message(){
@@ -157,7 +164,7 @@ public:
 
 	int login(){
 		if(flag != 2){
-			cout << "Message not correct\n";
+			if(DEBUG)cout << "Message not correct\n";
 			return -1;
 		}
 
@@ -170,7 +177,7 @@ public:
 	}
 
 	void logout(int fd){
-		cout << "sunt in logout\n";
+		if(DEBUG)cout << "sunt in logout\n";
 		id = s->disconnect_user(fd);
 		s->print_all_users();
 	}
@@ -327,6 +334,11 @@ public:
 		return listenfd;
 	}
 
+	string get_topic(){
+		string aux = (char *)message.topic;
+		return aux;
+	}
+
 private:
 	int listenfd;
 	struct UDP_Message message;
@@ -364,14 +376,14 @@ public:
 			return -1;
 		}
 
-		cout << "New client " << p.get_clid() << " connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << "\n";
+		cout << "New client " << p.get_clid() << " connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << ".\n";
 
 		return newfd;
 	}
 
 	void close_connection(int fd){
 		close(fd);
-		if(DEBUG)cout << "Client " << p.get_clid() << " disconnected: " << fd << endl;
+		cout << "Client " << p.get_clid() << " disconnected.\n";
 	}
 
 	int recv_and_back(int fd){
@@ -425,24 +437,17 @@ private:
 
 class Multiplexer{
 public:
-	Multiplexer(TCP_Connect t){
-		this->t = t;
-		this->tcpfd = t.get_listenfd();
+	Multiplexer(int tcpfd, int udpfd){
+		this->p = new Subscribe_Message_Parser();
+		this->t = new TCP_Connect(tcpfd, *p);
+		this->u = new UDP_Connect(udpfd);
+		this->tcpfd = tcpfd;
+		this->udpfd = udpfd;
+
+		num_sockets = 0;
+		add_fd(STDIN);
 		add_fd(this->tcpfd);
-
-		num_sockets = 1;
-	}
-
-	void add_udp(UDP_Connect u){
-		this->u = u;
-		this->udpfd = u.get_listenfd();
 		add_fd(this->udpfd);
-
-		num_sockets++;
-	}
-
-	void add_subs(Subscribe_Message_Parser &p){
-		this->p = p;
 	}
 
 	void poll_wait(){
@@ -463,51 +468,70 @@ public:
 		if(DEBUG)cout << "Removed: " << fd << endl;
 	}
 
-	void check_events(){
+	int check_events(){
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
 				if(poll_fds[i].fd == tcpfd){
-					int newfd = t.new_connection();
+					int newfd = t->new_connection();
 					if(newfd >= 0)
 						add_fd(newfd);
 				}else if(poll_fds[i].fd == udpfd){
-					u.recv();
-					send_all(u.get_message());
+					u->recv();
+					//send_all(u->get_message());
+					send_subs();
+				}else if(poll_fds[i].fd == STDIN){
+					string s;
+					cin >> s;
+					if(s == "exit")
+						return -1;
 				}else{
-					int rc = t.recv_smess(poll_fds[i].fd);
+					int rc = t->recv_smess(poll_fds[i].fd);
 					if(rc == -1){
-						p.logout(poll_fds[i].fd);
+						p->logout(poll_fds[i].fd);
 						remove_fd(i);
-						t.close_connection(poll_fds[i].fd);
+						t->close_connection(poll_fds[i].fd);
 						continue;
 					}
-					p.set_message(t.get_smess(), poll_fds[i].fd);
-					p.parse_message();
+					p->set_message(t->get_smess(), poll_fds[i].fd);
+					p->parse_message();
 				}
 				break;
 			}
 		}
+		return 0;
+	}
+
+	void send_subs(){
+		struct topic_message payload = wrap_message(u->get_message());
+		string topic = u->get_topic();
+
+		Share *s = p->get_share();
+		set<string> *subs = s->get_subs(topic);
+		if(subs == NULL)return;
+
+		for(auto it : *subs)
+			t->send_topic_message(s->get_fd(it), payload);
 	}
 
 	void send_all(struct UDP_Message message){
 		struct topic_message payload = wrap_message(message);
-		cout << "wrapped message: " << payload.ip_udp << " " << payload.port_udp << " " << payload.message.topic << " " << payload.message.type << " " << payload.message.data << endl;
+		if(DEBUG)cout << "wrapped message: " << payload.ip_udp << " " << payload.port_udp << " " << payload.message.topic << " " << payload.message.type << " " << payload.message.data << endl;
 
 		for(auto it : poll_fds)
 			if(it.fd != tcpfd && it.fd != udpfd)
-				t.send_topic_message(it.fd, payload);
+				t->send_topic_message(it.fd, payload);
 	}
 
 	struct topic_message wrap_message(struct UDP_Message message){
-		struct topic_message payload = {.ip_udp = u.get_client_ip(), .port_udp = u.get_client_port(), .message = message};
+		struct topic_message payload = {.ip_udp = u->get_client_ip(), .port_udp = u->get_client_port(), .message = message};
 
 		return payload;
 	}
 
 private:
-	TCP_Connect t;
-	UDP_Connect u;
-	Subscribe_Message_Parser p;
+	TCP_Connect *t;
+	UDP_Connect *u;
+	Subscribe_Message_Parser *p;
 	vector<struct pollfd> poll_fds;
 	int tcpfd, udpfd;
 	int num_sockets;
@@ -517,16 +541,15 @@ int main(int argc, char *argv[]){
 	Server s(argv[1]);
 	s.start();
 
-	Subscribe_Message_Parser p;
-	UDP_Connect u(s.get_udp_fd());
-	TCP_Connect t(s.get_tcp_fd(), p);
-	Multiplexer x(t);
-	x.add_udp(u);
-	x.add_subs(p);
+	Multiplexer x(s.get_tcp_fd(), s.get_udp_fd());
 
 	while(1){
 		x.poll_wait();
-		x.check_events();
+		int rc = x.check_events();
+		if(rc == -1)
+			break;
 	}
+
+	s.stop();
 }
 
