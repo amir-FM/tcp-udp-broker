@@ -16,6 +16,7 @@
 using namespace std;
 
 #define DEBUG 1
+#define STDIN 0
 
 class Client{
 public:
@@ -92,9 +93,6 @@ public:
 	void recv_message(){
 		int rc = recv(listenfd, &message, sizeof(struct topic_message), 0);
 		DIE(rc < 0, "recv");
-
-		//if(rc)
-		//cout << "wrapped message: " << message.ip_udp << " " << message.port_udp << " " << message.message.topic << " " << message.message.type << " " << message.message.data << "-------------------------------\n\n";
 	}
 
 	int get_listenfd(){
@@ -214,15 +212,68 @@ private:
 	string data;
 };
 
+class Multiplexer{
+public:
+	Multiplexer (){}
+	Multiplexer (int tcpfd){
+		this->t = new TCP_Connect(tcpfd);
+		this->parser = new Topic_Message_Parser();
+		this->tcpfd = tcpfd;
+		num_sockets = 0;
+		add_fd(STDIN);
+		add_fd(tcpfd);
+	}
+
+	void poll_wait(){
+		int rc = poll(poll_fds.data(), num_sockets, -1);
+		DIE(rc < 0, "poll");
+	}
+
+	void add_fd(int fd){
+		struct pollfd p = {.fd = fd, .events = POLLIN};
+		poll_fds.push_back(p);
+		num_sockets++;
+		if(DEBUG)cout << "added: " << fd << endl;
+	}
+
+	void remove_fd(int index){
+		int fd = poll_fds[index].fd;
+		poll_fds.erase(poll_fds.begin() + index);
+		if(DEBUG)cout << "Removed: " << fd << endl;
+	}
+
+	void check_events(){
+		for(int i = 0; i < num_sockets; i++){
+			if(poll_fds[i].revents & POLLIN){
+				if(poll_fds[i].fd == tcpfd){
+					t->recv_message();
+					parser->parse_message(t->get_message());
+					cout << parser->get_result() << endl;
+				}else if(poll_fds[i].fd == STDIN){
+					string test;
+					cin >> test;
+					cout << "am afisat " << test << endl; 
+				}
+			}
+		}
+	}
+
+private:
+	TCP_Connect *t;
+	Topic_Message_Parser *parser;
+	vector<struct pollfd> poll_fds;
+	int tcpfd;
+	int num_sockets;
+};
+
+
 int main(int argc, char *argv[]){
 	Client c(argv[1], argv[2], argv[3]);
 	c.start();
-	TCP_Connect t(TCP_Connect(c.get_fd()));
-	Topic_Message_Parser parser;
+	Multiplexer x(c.get_fd());
 	while(1){
-		t.recv_message();
-		parser.parse_message(t.get_message());
-		cout << parser.get_result() << endl;
+		x.poll_wait();
+		x.check_events();
 	}
 
 }
