@@ -50,6 +50,10 @@ public:
 		return users.find(id) != users.end();
 	}
 
+	int topic_exists(string topic){
+		return topics.find(topic) != topics.end();
+	}
+
 	void disconnect_user(string id){
 		users[id] = -1;
 	}
@@ -88,6 +92,18 @@ public:
 		return 0;
 	}
 
+	int remove_user_from_topic(string topic, string id){
+		if(!user_exists(id))
+			return -1;
+
+		if(!topic_exists(topic))
+			return -1;
+
+		topics[topic].erase(id);
+
+		return 0;
+	}
+
 	void print_all_topics(){
 		for(auto it : topics){
 			cout << it.first << ": ";
@@ -111,35 +127,40 @@ public:
 	void set_message(struct subscribe_message message, int fd){
 		this->message = message;
 		this->fd = fd;
-		get_flag();
-	}
-
-	void get_flag(){
 		this->flag = message.flag;
+		this->id = (char *)message.clid;
+		this->topic = (char *)message.data;
+		cout << flag << " " << id << " " << topic << endl;
 	}
 
 	void parse_message(){
 		switch(flag){
 		case 0:
+			subscribe();
 			break;
 		case 1:
+			unsubscribe();
 			break;
 		default:
 			break;
 		}
+		s->print_all_topics();
+	}
+
+	void subscribe(){
+		s->add_user_to_topic(topic, id);
+	}
+
+	void unsubscribe(){
+		s->remove_user_from_topic(topic, id);
 	}
 
 	int login(){
-		this->message = message;
-		this->fd = fd;
-
-		get_flag();
 		if(flag != 2){
 			cout << "Message not correct\n";
 			return -1;
 		}
 
-		id = (char *)message.clid;
 		int rc = s->connect_user(id, fd);
 		s->print_all_users();
 
@@ -166,6 +187,7 @@ private:
 	struct subscribe_message message;
 	int fd;
 	string id;
+	string topic;
 	uint8_t flag;
 };
 

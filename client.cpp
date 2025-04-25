@@ -39,6 +39,10 @@ public:
 		return tcpfd;
 	}
 	
+	string get_id(){
+		return id;
+	}
+	
 private:
 	int tcpfd;
 	struct sockaddr_in serv_addr;
@@ -98,6 +102,12 @@ public:
 			return -1;
 		return 0;
 
+	}
+
+	void send_message(struct subscribe_message message){
+		int rc = send(listenfd, &message, sizeof(message), 0);
+		DIE(rc < 0, "send");
+		cout << "sent message\n";
 	}
 
 	int get_listenfd(){
@@ -217,13 +227,53 @@ private:
 	string data;
 };
 
+class Subscribe_Message_Parser{
+public:
+	struct subscribe_message message;
+
+	void clean_message(){
+		memset(&message, 0, sizeof(message));
+	}
+
+	void parse_string(string id){
+		clean_message();
+		strncpy((char *)message.clid, id.data(), 11);
+		string verb, subject;
+		cin >> verb >> subject;
+		cout << "read: " << verb << " " << subject << endl;
+		if(verb == "subscribe"){
+			subscribe(subject);
+		}else if(verb == "unsubscribe"){
+			unsubscribe(subject);
+		}
+	}
+
+	void subscribe(string s){
+		message.flag = 0;
+		strncpy((char *)message.data, s.data(), 50);
+	}
+
+	void unsubscribe(string s){
+		message.flag = 1;
+		strncpy((char *)message.data, s.data(), 50);
+	}
+
+	struct subscribe_message get_message(){
+		return message;
+	}
+private:
+
+};
+
 class Multiplexer{
 public:
 	Multiplexer (){}
-	Multiplexer (int tcpfd){
+	Multiplexer (int tcpfd, string id){
 		this->t = new TCP_Connect(tcpfd);
 		this->parser = new Topic_Message_Parser();
+		this->spar = new Subscribe_Message_Parser();
 		this->tcpfd = tcpfd;
+		this->id = id;
 		num_sockets = 0;
 		add_fd(STDIN);
 		add_fd(tcpfd);
@@ -256,9 +306,8 @@ public:
 					parser->parse_message(t->get_message());
 					cout << parser->get_result() << endl;
 				}else if(poll_fds[i].fd == STDIN){
-					string test;
-					cin >> test;
-					cout << "am afisat " << test << endl; 
+					spar->parse_string(id);
+					t->send_message(spar->get_message());
 				}
 			}
 		}
@@ -268,7 +317,9 @@ public:
 private:
 	TCP_Connect *t;
 	Topic_Message_Parser *parser;
+	Subscribe_Message_Parser *spar;
 	vector<struct pollfd> poll_fds;
+	string id;
 	int tcpfd;
 	int num_sockets;
 };
@@ -277,7 +328,7 @@ private:
 int main(int argc, char *argv[]){
 	Client c(argv[1], argv[2], argv[3]);
 	c.start();
-	Multiplexer x(c.get_fd());
+	Multiplexer x(c.get_fd(), c.get_id());
 	while(1){
 		x.poll_wait();
 		int rc = x.check_events();
