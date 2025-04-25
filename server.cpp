@@ -78,6 +78,19 @@ public:
 		return &topics[topic];
 	}
 
+	int check_user_topic(string id, string topic){
+		set<string> s = topics[id];
+
+		for(auto it : s)
+			if(check_topic(it, topic))
+				return 1;
+		return 0;
+	}
+
+	int check_topic(string a, string b){
+		return a == b;
+	}
+
 	void print_all_users(){
 		for(auto it : users)
 			if(DEBUG)cout << "(" << it.first << ":" << it.second << ") ";
@@ -91,22 +104,19 @@ public:
 		if(DEBUG)cout << endl;
 	}
 
-	int add_user_to_topic(string topic, string id){
+	int add_topic_to_user(string topic, string id){
 		if(!user_exists(id))
 			return -1;
 
-		topics[topic].insert(id);
+		topics[id].insert(topic);
 		return 0;
 	}
 
-	int remove_user_from_topic(string topic, string id){
+	int remove_topic_from_user(string topic, string id){
 		if(!user_exists(id))
 			return -1;
 
-		if(!topic_exists(topic))
-			return -1;
-
-		topics[topic].erase(id);
+		topics[id].erase(topic);
 
 		return 0;
 	}
@@ -114,8 +124,8 @@ public:
 	void print_all_topics(){
 		for(auto it : topics){
 			if(DEBUG)cout << it.first << ": ";
-			for(auto user : it.second)
-				if(DEBUG)cout << user << " ";
+			for(auto topic : it.second)
+				if(DEBUG)cout << topic << " ";
 			if(DEBUG)cout << endl;
 		}
 	}
@@ -155,11 +165,11 @@ public:
 	}
 
 	void subscribe(){
-		s->add_user_to_topic(topic, id);
+		s->add_topic_to_user(topic, id);
 	}
 
 	void unsubscribe(){
-		s->remove_user_from_topic(topic, id);
+		s->remove_topic_from_user(topic, id);
 	}
 
 	int login(){
@@ -538,6 +548,8 @@ private:
 };
 
 int main(int argc, char *argv[]){
+	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+
 	Server s(argv[1]);
 	s.start();
 

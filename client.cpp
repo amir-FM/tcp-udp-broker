@@ -15,7 +15,7 @@
 
 using namespace std;
 
-#define DEBUG 1
+#define DEBUG 0
 #define STDIN 0
 
 class Client{
@@ -107,7 +107,7 @@ public:
 	void send_message(struct subscribe_message message){
 		int rc = send(listenfd, &message, sizeof(message), 0);
 		DIE(rc < 0, "send");
-		cout << "sent message\n";
+		if(DEBUG)cout << "sent message\n";
 	}
 
 	int get_listenfd(){
@@ -235,12 +235,12 @@ public:
 		memset(&message, 0, sizeof(message));
 	}
 
-	void parse_string(string id){
+	void parse_string(string verb, string id){
 		clean_message();
 		strncpy((char *)message.clid, id.data(), 11);
-		string verb, subject;
-		cin >> verb >> subject;
-		cout << "read: " << verb << " " << subject << endl;
+		string subject;
+		cin >> subject;
+		if(DEBUG)cout << "read: " << verb << " " << subject << endl;
 		if(verb == "subscribe"){
 			subscribe(subject);
 		}else if(verb == "unsubscribe"){
@@ -306,7 +306,11 @@ public:
 					parser->parse_message(t->get_message());
 					cout << parser->get_result() << endl;
 				}else if(poll_fds[i].fd == STDIN){
-					spar->parse_string(id);
+					string verb;
+					cin >> verb;
+					if(verb == "exit")
+						return -1;
+					spar->parse_string(verb, id);
 					t->send_message(spar->get_message());
 				}
 			}
@@ -326,6 +330,8 @@ private:
 
 
 int main(int argc, char *argv[]){
+	setvbuf(stdout, NULL, _IONBF, BUFSIZ);
+
 	Client c(argv[1], argv[2], argv[3]);
 	c.start();
 	Multiplexer x(c.get_fd(), c.get_id());
