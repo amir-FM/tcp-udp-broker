@@ -90,9 +90,14 @@ public:
 		this->listenfd = listenfd;
 	}
 
-	void recv_message(){
+	int recv_message(){
 		int rc = recv(listenfd, &message, sizeof(struct topic_message), 0);
 		DIE(rc < 0, "recv");
+		
+		if(rc == 0)
+			return -1;
+		return 0;
+
 	}
 
 	int get_listenfd(){
@@ -242,11 +247,12 @@ public:
 		if(DEBUG)cout << "Removed: " << fd << endl;
 	}
 
-	void check_events(){
+	int check_events(){
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
 				if(poll_fds[i].fd == tcpfd){
-					t->recv_message();
+					int rc = t->recv_message();
+					if(rc == -1)return -1;
 					parser->parse_message(t->get_message());
 					cout << parser->get_result() << endl;
 				}else if(poll_fds[i].fd == STDIN){
@@ -256,6 +262,7 @@ public:
 				}
 			}
 		}
+		return 0;
 	}
 
 private:
@@ -273,7 +280,9 @@ int main(int argc, char *argv[]){
 	Multiplexer x(c.get_fd());
 	while(1){
 		x.poll_wait();
-		x.check_events();
+		int rc = x.check_events();
+		if(rc == -1)
+			break;
 	}
-
+	c.stop();
 }
