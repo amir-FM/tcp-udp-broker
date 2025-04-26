@@ -38,13 +38,17 @@ public:
 	int algo(stringstream &regex, stringstream &str){
 		int is_valid = 0;
 		string tokr, toks;
+
 		while(getline(regex, tokr, '/') && getline(str, toks, '/')){
 			if(DEBUG)cout << tokr << " " << toks << endl;
 			if(tokr == "*"){
-				if(getline(regex, tokr, '/'))return 1;
-				while(getline(str, toks, '/'))
+				if(!getline(regex, tokr, '/'))return 1;
+				while(getline(str, toks, '/')){
 					if(tokr == toks)
 						break;
+					if(tokr != toks)
+						return 0;
+				}
 			}else if(tokr != "+"){
 				if(tokr != toks)
 					return 0;
@@ -56,8 +60,6 @@ public:
 
 		return 1;
 	}
-
-private:
 };
 
 class Share {
