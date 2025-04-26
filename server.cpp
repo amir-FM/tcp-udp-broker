@@ -4,6 +4,7 @@
 #include <map>
 #include <cstdint>
 #include <cstring>
+#include <sstream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -12,17 +13,58 @@
 #include "helper.h"
 #include "protocols.h"
 
-#define DEBUG 1
+#define DEBUG 0
+#define DEBUG2 0
 #define STDIN 0
 #define MAX_CONNECTIONS 1000
 
 using namespace std;
 
+class Regex {
+public:
+	int check(string regex, string str){
+		if(regex == "*")
+			return 1;
+
+		stringstream reg_stream(regex);
+		stringstream str_stream(str);
+		reg_stream << regex;
+		str_stream << str;
+
+		int rc = algo(reg_stream, str_stream);
+		return rc;
+	}
+
+	int algo(stringstream &regex, stringstream &str){
+		int is_valid = 0;
+		string tokr, toks;
+		while(getline(regex, tokr, '/') && getline(str, toks, '/')){
+			if(DEBUG)cout << tokr << " " << toks << endl;
+			if(tokr == "*"){
+				if(getline(regex, tokr, '/'))return 1;
+				while(getline(str, toks, '/'))
+					if(tokr == toks)
+						break;
+			}else if(tokr != "+"){
+				if(tokr != toks)
+					return 0;
+			}
+		}
+		return 1;
+	}
+
+private:
+};
+
 class Share {
 public:
+	Share () {
+		this->rgx = new Regex();
+	}
+
 	int connect_user(string id, int fd){
 		if(user_in_use(id)){
-			cout << "User: " << id << ":" << users[id] << " is in use\n";
+			cout << "Client " << id << " already connected.\n";
 			return -1;
 		}
 
@@ -71,11 +113,8 @@ public:
 		return "NOT SUPPOSED TO ARRIVE HERE";
 	}
 
-	set<string> *get_subs(string topic){
-		if(!topic_exists(topic))
-			return NULL;
-
-		return &topics[topic];
+	map<string, set<string>> get_topics(){
+		return topics;
 	}
 
 	int check_user_topic(string id, string topic){
@@ -88,7 +127,9 @@ public:
 	}
 
 	int check_topic(string a, string b){
-		return a == b;
+		int rc = rgx->check(a, b);
+		if(DEBUG2)cout << "checked: " << a << " , " << b << " with rc: " << rc << endl;
+		return rc;
 	}
 
 	void print_all_users(){
@@ -123,16 +164,17 @@ public:
 
 	void print_all_topics(){
 		for(auto it : topics){
-			if(DEBUG)cout << it.first << ": ";
+			if(DEBUG2)cout << it.first << ": ";
 			for(auto topic : it.second)
-				if(DEBUG)cout << topic << " ";
-			if(DEBUG)cout << endl;
+				if(DEBUG2)cout << topic << " ";
+			if(DEBUG2)cout << endl;
 		}
 	}
 
 private:
 	map<string, int> users;
 	map<string, set<string>> topics;
+	Regex *rgx;
 };
 
 class Subscribe_Message_Parser {
@@ -164,6 +206,18 @@ public:
 		s->print_all_topics();
 	}
 
+	map<string, set<string>> get_topics(){
+		return s->get_topics();
+	}
+	
+	int check_user_topic(string id, string topic){
+		return s->check_user_topic(id, topic);
+	}
+
+	int get_fd(string id){
+		return s->get_fd(id);
+	}
+
 	void subscribe(){
 		s->add_topic_to_user(topic, id);
 	}
@@ -192,9 +246,6 @@ public:
 		s->print_all_users();
 	}
 
-	Share *get_share(){
-		return s;
-	}
 
 	string get_clid(){
 		return id;
@@ -323,7 +374,6 @@ public:
 		socklen_t clen = sizeof(cl_addr);
 
 		int rc = recvfrom(listenfd, &message, sizeof(struct UDP_Message), 0, (struct sockaddr *)&cl_addr, &clen);
-		if(DEBUG)cout << "Recv UDP: " << rc << "bytes\n";
 		
 		return rc;
 	}
@@ -382,7 +432,7 @@ public:
 		p.set_message(get_smess(), newfd);
 		rc = p.login();
 		if(rc < 0){
-			close_connection(newfd);
+			close_connection(newfd, 0);
 			return -1;
 		}
 
@@ -391,35 +441,20 @@ public:
 		return newfd;
 	}
 
-	void close_connection(int fd){
+	void close_connection(int fd, int print){
 		close(fd);
-		cout << "Client " << p.get_clid() << " disconnected.\n";
+		if(print)cout << "Client " << p.get_clid() << " disconnected.\n";
 	}
 
-	int recv_and_back(int fd){
-		int rc;
-		uint8_t packet[1500];
-
-		rc = recv(fd, &packet, sizeof(packet), 0);
-		DIE(rc < 0, "recv");
-
-		if(rc == 0){
-			close_connection(fd);
-			return -2;
-		}
-
-		rc = send(fd, &packet, rc, 0);
-		DIE(rc < 0, "send");
-		return 0;
-	}
-
-	void send_topic_message(int fd, struct topic_message message){
+	int send_topic_message(int fd, struct topic_message message){
 		int rc;
 
 		rc = send(fd, &message, sizeof(message), 0);
-		DIE(rc < 0, "send");
 
 		if(DEBUG)cout << "Sent message to " << fd << endl;
+		if(rc <= 0)
+			return -1;
+		return 0;
 	}
 
 	int get_listenfd(){
@@ -428,9 +463,8 @@ public:
 
 	int recv_smess(int fd){
 		int rc = recv(fd, &smess, sizeof(smess), 0);
-		DIE(rc < 0, "recv");
 		
-		if(rc == 0)
+		if(rc <= 0)
 			return -1;
 		return 0;
 	}
@@ -472,10 +506,26 @@ public:
 		if(DEBUG)cout << "added: " << fd << endl;
 	}
 
-	void remove_fd(int index){
-		int fd = poll_fds[index].fd;
-		poll_fds.erase(poll_fds.begin() + index);
+	//void remove_fd(int index){
+	//	int fd = poll_fds[index].fd;
+	//	poll_fds.erase(poll_fds.begin() + index);
+	//	if(DEBUG)cout << "Removed: " << fd << endl;
+	//}
+
+	void remove_fd(int fd){
+		int i = 0;
+		while(i < num_sockets){
+			if(poll_fds[i].fd == fd)
+				break;
+			i++;
+		}
+
+		if(i == num_sockets)
+			return;
+
+		poll_fds.erase(poll_fds.begin() + i);
 		if(DEBUG)cout << "Removed: " << fd << endl;
+		num_sockets--;
 	}
 
 	int check_events(){
@@ -497,39 +547,47 @@ public:
 				}else{
 					int rc = t->recv_smess(poll_fds[i].fd);
 					if(rc == -1){
-						p->logout(poll_fds[i].fd);
-						remove_fd(i);
-						t->close_connection(poll_fds[i].fd);
+						logout_user(poll_fds[i].fd);
 						continue;
 					}
 					p->set_message(t->get_smess(), poll_fds[i].fd);
 					p->parse_message();
 				}
-				break;
 			}
 		}
 		return 0;
+	}
+	void logout_user(int fd){
+		p->logout(fd);
+		remove_fd(fd);
+		t->close_connection(fd, 1);
 	}
 
 	void send_subs(){
 		struct topic_message payload = wrap_message(u->get_message());
 		string topic = u->get_topic();
 
-		Share *s = p->get_share();
-		set<string> *subs = s->get_subs(topic);
-		if(subs == NULL)return;
+		map<string, set<string>> topics = p->get_topics();
 
-		for(auto it : *subs)
-			t->send_topic_message(s->get_fd(it), payload);
+		for(auto it : topics){
+			int fd = p->get_fd(it.first);
+			if(fd < 0)continue;
+			if(p->check_user_topic(it.first, topic)){
+				int rc = t->send_topic_message(fd, payload);
+				if(rc == -1)
+					logout_user(fd);
+			}
+		}
 	}
 
 	void send_all(struct UDP_Message message){
 		struct topic_message payload = wrap_message(message);
-		if(DEBUG)cout << "wrapped message: " << payload.ip_udp << " " << payload.port_udp << " " << payload.message.topic << " " << payload.message.type << " " << payload.message.data << endl;
 
 		for(auto it : poll_fds)
-			if(it.fd != tcpfd && it.fd != udpfd)
-				t->send_topic_message(it.fd, payload);
+			if(it.fd != tcpfd && it.fd != udpfd && it.fd != STDIN){
+				int rc = t->send_topic_message(it.fd, payload);
+				if(rc == -1)logout_user(it.fd);
+			}
 	}
 
 	struct topic_message wrap_message(struct UDP_Message message){

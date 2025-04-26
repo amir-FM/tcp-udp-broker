@@ -243,8 +243,12 @@ public:
 		if(DEBUG)cout << "read: " << verb << " " << subject << endl;
 		if(verb == "subscribe"){
 			subscribe(subject);
+			//TODO: de refacut aceasta parte
+			cout << "Subscribed to topic " << subject << endl;
 		}else if(verb == "unsubscribe"){
 			unsubscribe(subject);
+			//TODO: de refacut aceasta parte
+			cout << "Unsubscribed from topic " << subject << endl;
 		}
 	}
 
