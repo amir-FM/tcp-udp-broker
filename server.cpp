@@ -50,6 +50,10 @@ public:
 					return 0;
 			}
 		}
+
+		if(getline(regex, tokr, '/') || getline(str, toks, '/'))
+			return 0;
+
 		return 1;
 	}
 

@@ -198,7 +198,7 @@ public:
 		uint32_t data = *(uint32_t *)(message.message.data + 1);
 		uint8_t power = *(uint8_t *)(message.message.data + 5);
 
-		float number = ntohl(data) * pow(10, -1 * power);
+		double number = ntohl(data) * pow(10, -1 * power);
 
 		if(sign)
 			number *= -1;
