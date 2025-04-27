@@ -130,6 +130,18 @@ public:
 		make_result();
 	}
 
+	string get_result(){
+		return result;
+	}
+
+private:
+	struct topic_message message;
+	string ip_udp;
+	string port;
+	string topic;
+	string type;
+	string data;
+
 	void get_ip(){
 		struct in_addr aux = {.s_addr = message.ip_udp};
 		ip_udp = inet_ntoa(aux);
@@ -207,59 +219,58 @@ public:
 	void make_result(){
 		result = ip_udp + ":" + port + " - " + topic + " - " + type + " - " + data;
 	}
-
-	string get_result(){
-		return result;
-	}
-private:
-	struct topic_message message;
-	string ip_udp;
-	string port;
-	string topic;
-	string type;
-	string data;
 };
 
 class Subscribe_Message_Parser{
 public:
-	struct subscribe_message message;
-
-	void clean_message(){
-		memset(&message, 0, sizeof(message));
-	}
-
 	void parse_string(string verb, string id){
 		clean_message();
 		strncpy((char *)message.clid, id.data(), 11);
-		string subject;
 		cin >> subject;
 		if(DEBUG)cout << "read: " << verb << " " << subject << endl;
+		can_print = 1;
 		if(verb == "subscribe"){
 			subscribe(subject);
-			//TODO: de refacut aceasta parte
-			cout << "Subscribed to topic " << subject << endl;
 		}else if(verb == "unsubscribe"){
 			unsubscribe(subject);
-			//TODO: de refacut aceasta parte
-			cout << "Unsubscribed from topic " << subject << endl;
-		}
-	}
-
-	void subscribe(string s){
-		message.flag = 0;
-		strncpy((char *)message.data, s.data(), 50);
-	}
-
-	void unsubscribe(string s){
-		message.flag = 1;
-		strncpy((char *)message.data, s.data(), 50);
+		}else can_print = 0;
 	}
 
 	struct subscribe_message get_message(){
 		return message;
 	}
-private:
 
+	void print_feedback(){
+		if(!can_print)
+			return;
+
+		if(flag)
+			cout << "Unsubscribed from topic " << subject << endl;
+		else
+			cout << "Subscribed to topic " << subject << endl;
+
+	}
+
+private:
+	struct subscribe_message message;
+	int flag;
+	int can_print;
+	string subject;
+
+	void clean_message(){
+		memset(&message, 0, sizeof(message));
+	}
+
+
+	void subscribe(string s){
+		flag = message.flag = 0;
+		strncpy((char *)message.data, s.data(), 50);
+	}
+
+	void unsubscribe(string s){
+		flag = message.flag = 1;
+		strncpy((char *)message.data, s.data(), 50);
+	}
 };
 
 class Multiplexer{
@@ -281,19 +292,6 @@ public:
 		DIE(rc < 0, "poll");
 	}
 
-	void add_fd(int fd){
-		struct pollfd p = {.fd = fd, .events = POLLIN};
-		poll_fds.push_back(p);
-		num_sockets++;
-		if(DEBUG)cout << "added: " << fd << endl;
-	}
-
-	void remove_fd(int index){
-		int fd = poll_fds[index].fd;
-		poll_fds.erase(poll_fds.begin() + index);
-		if(DEBUG)cout << "Removed: " << fd << endl;
-	}
-
 	int check_events(){
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
@@ -310,6 +308,7 @@ public:
 					spar->parse_string(verb, id);
 					int rc = t->send_message(spar->get_message());
 					if(rc == -1)return -1;
+					spar->print_feedback();
 				}
 			}
 		}
@@ -324,6 +323,19 @@ private:
 	string id;
 	int tcpfd;
 	int num_sockets;
+
+	void add_fd(int fd){
+		struct pollfd p = {.fd = fd, .events = POLLIN};
+		poll_fds.push_back(p);
+		num_sockets++;
+		if(DEBUG)cout << "added: " << fd << endl;
+	}
+
+	void remove_fd(int index){
+		int fd = poll_fds[index].fd;
+		poll_fds.erase(poll_fds.begin() + index);
+		if(DEBUG)cout << "Removed: " << fd << endl;
+	}
 };
 
 
