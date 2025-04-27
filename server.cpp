@@ -1,15 +1,8 @@
 #include <sstream>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
+#include <climits>
 #include "helper.h"
 #include "protocols.h"
 
-#define DEBUG 0
-#define DEBUG2 0
-#define STDIN 0
-#define MAX_CONNECTIONS 1000
 
 using namespace std;
 
@@ -28,6 +21,7 @@ public:
 		return rc;
 	}
 
+private:
 	int algo(stringstream &regex, stringstream &str){
 		int is_valid = 0;
 		string tokr, toks;
@@ -80,25 +74,6 @@ public:
 		}
 	}
 
-	int user_in_use(string id){
-		if(users.find(id) == users.end())
-			return 0;
-
-		return users[id] >= 0;
-	}
-	
-	int user_exists(string id){
-		return users.find(id) != users.end();
-	}
-
-	int topic_exists(string topic){
-		return topics.find(topic) != topics.end();
-	}
-
-	void disconnect_user(string id){
-		users[id] = -1;
-	}
-
 	string disconnect_user(int fd){
 		if(DEBUG)cout << "caut: " << fd << endl;
 		if(DEBUG)cout << "dim: " << users.size() << endl;
@@ -123,12 +98,6 @@ public:
 			if(check_topic(it, topic))
 				return 1;
 		return 0;
-	}
-
-	int check_topic(string a, string b){
-		int rc = rgx->check(a, b);
-		if(DEBUG2)cout << "checked: " << a << " , " << b << " with rc: " << rc << endl;
-		return rc;
 	}
 
 	void print_all_users(){
@@ -163,10 +132,10 @@ public:
 
 	void print_all_topics(){
 		for(auto it : topics){
-			if(DEBUG2)cout << it.first << ": ";
+			if(DEBUG)cout << it.first << ": ";
 			for(auto topic : it.second)
-				if(DEBUG2)cout << topic << " ";
-			if(DEBUG2)cout << endl;
+				if(DEBUG)cout << topic << " ";
+			if(DEBUG)cout << endl;
 		}
 	}
 
@@ -174,6 +143,31 @@ private:
 	map<string, int> users;
 	map<string, set<string>> topics;
 	Regex *rgx;
+
+	int user_in_use(string id){
+		if(users.find(id) == users.end())
+			return 0;
+
+		return users[id] >= 0;
+	}
+
+	int user_exists(string id){
+		return users.find(id) != users.end();
+	}
+
+	int topic_exists(string topic){
+		return topics.find(topic) != topics.end();
+	}
+
+	void disconnect_user(string id){
+		users[id] = -1;
+	}
+
+	int check_topic(string a, string b){
+		int rc = rgx->check(a, b);
+		if(DEBUG)cout << "checked: " << a << " , " << b << " with rc: " << rc << endl;
+		return rc;
+	}
 };
 
 class Subscribe_Message_Parser {
@@ -191,40 +185,6 @@ public:
 		if(DEBUG)cout << flag << " " << id << " " << topic << endl;
 	}
 
-	void parse_message(){
-		switch(flag){
-		case 0:
-			subscribe();
-			break;
-		case 1:
-			unsubscribe();
-			break;
-		default:
-			break;
-		}
-		s->print_all_topics();
-	}
-
-	map<string, set<string>> get_topics(){
-		return s->get_topics();
-	}
-	
-	int check_user_topic(string id, string topic){
-		return s->check_user_topic(id, topic);
-	}
-
-	int get_fd(string id){
-		return s->get_fd(id);
-	}
-
-	void subscribe(){
-		s->add_topic_to_user(topic, id);
-	}
-
-	void unsubscribe(){
-		s->remove_topic_from_user(topic, id);
-	}
-
 	int login(){
 		if(flag != 2){
 			if(DEBUG)cout << "Message not correct\n";
@@ -239,16 +199,42 @@ public:
 		return 0;
 	}
 
+	string get_clid(){
+		return id;
+	}
+
 	void logout(int fd){
 		if(DEBUG)cout << "sunt in logout\n";
 		id = s->disconnect_user(fd);
 		s->print_all_users();
 	}
 
-
-	string get_clid(){
-		return id;
+	map<string, set<string>> get_topics(){
+		return s->get_topics();
 	}
+
+	void parse_message(){
+		switch(flag){
+		case 0:
+			subscribe();
+			break;
+		case 1:
+			unsubscribe();
+			break;
+		default:
+			break;
+		}
+		s->print_all_topics();
+	}
+
+	int check_user_topic(string id, string topic){
+		return s->check_user_topic(id, topic);
+	}
+
+	int get_fd(string id){
+		return s->get_fd(id);
+	}
+
 private:
 	Share *s;
 	struct subscribe_message message;
@@ -256,6 +242,14 @@ private:
 	string id;
 	string topic;
 	uint8_t flag;
+
+	void subscribe(){
+		s->add_topic_to_user(topic, id);
+	}
+
+	void unsubscribe(){
+		s->remove_topic_from_user(topic, id);
+	}
 };
 
 class Server{
@@ -303,7 +297,7 @@ private:
 		rc = bind(tcpfd, (const struct sockaddr *)&serv_addr, sizeof(serv_addr));
 		DIE(rc < 0, "bind");
 
-		rc = listen(tcpfd, MAX_CONNECTIONS);
+		rc = listen(tcpfd, INT_MAX);
 		DIE(rc < 0, "listen");
 
 		if(DEBUG)cout << "Started TCP server\n";
@@ -352,20 +346,6 @@ public:
 	UDP_Connect(int listenfd){
 		this->listenfd = listenfd;
 	}
-
-	//int recv_and_print(){
-	//	clean_message();
-
-	//	struct sockaddr_in cl_addr;
-	//	socklen_t clen = sizeof(cl_addr);
-
-	//	int rc = recvfrom(listenfd, &message, sizeof(struct udp_message), 0, (struct sockaddr *)&cl_addr, &clen);
-	//	
-	//	if(rc > 0)
-	//		cout << message.topic << " " << message.type << "\n" << message.data<< "\n------------------------------------\n\n";
-
-	//	return rc;
-	//}
 
 	int recv(){
 		clean_message();
@@ -502,35 +482,6 @@ public:
 		DIE(rc < 0, "poll");
 	}
 
-	void add_fd(int fd){
-		struct pollfd p = {.fd = fd, .events = POLLIN};
-		poll_fds.push_back(p);
-		num_sockets++;
-		if(DEBUG)cout << "added: " << fd << endl;
-	}
-
-	//void remove_fd(int index){
-	//	int fd = poll_fds[index].fd;
-	//	poll_fds.erase(poll_fds.begin() + index);
-	//	if(DEBUG)cout << "Removed: " << fd << endl;
-	//}
-
-	void remove_fd(int fd){
-		int i = 0;
-		while(i < num_sockets){
-			if(poll_fds[i].fd == fd)
-				break;
-			i++;
-		}
-
-		if(i == num_sockets)
-			return;
-
-		poll_fds.erase(poll_fds.begin() + i);
-		if(DEBUG)cout << "Removed: " << fd << endl;
-		num_sockets--;
-	}
-
 	int check_events(){
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
@@ -540,7 +491,6 @@ public:
 						add_fd(newfd);
 				}else if(poll_fds[i].fd == udpfd){
 					u->recv();
-					//send_all(u->get_message());
 					send_subs();
 				}else if(poll_fds[i].fd == STDIN){
 					string s;
@@ -560,6 +510,38 @@ public:
 		}
 		return 0;
 	}
+
+private:
+	TCP_Connect *t;
+	UDP_Connect *u;
+	Subscribe_Message_Parser *p;
+	vector<struct pollfd> poll_fds;
+	int tcpfd, udpfd;
+	int num_sockets;
+
+	void add_fd(int fd){
+		struct pollfd p = {.fd = fd, .events = POLLIN};
+		poll_fds.push_back(p);
+		num_sockets++;
+		if(DEBUG)cout << "added: " << fd << endl;
+	}
+
+	void remove_fd(int fd){
+		int i = 0;
+		while(i < num_sockets){
+			if(poll_fds[i].fd == fd)
+				break;
+			i++;
+		}
+
+		if(i == num_sockets)
+			return;
+
+		poll_fds.erase(poll_fds.begin() + i);
+		if(DEBUG)cout << "Removed: " << fd << endl;
+		num_sockets--;
+	}
+
 	void logout_user(int fd){
 		p->logout(fd);
 		remove_fd(fd);
@@ -598,14 +580,6 @@ public:
 
 		return payload;
 	}
-
-private:
-	TCP_Connect *t;
-	UDP_Connect *u;
-	Subscribe_Message_Parser *p;
-	vector<struct pollfd> poll_fds;
-	int tcpfd, udpfd;
-	int num_sockets;
 };
 
 int main(int argc, char *argv[]){

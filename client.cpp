@@ -4,8 +4,6 @@
 
 using namespace std;
 
-#define DEBUG 0
-#define STDIN 0
 
 class Client{
 public:
@@ -97,10 +95,12 @@ public:
 
 	}
 
-	void send_message(struct subscribe_message message){
+	int send_message(struct subscribe_message message){
 		int rc = send(listenfd, &message, sizeof(message), 0);
-		DIE(rc < 0, "send");
 		if(DEBUG)cout << "sent message\n";
+		if(rc <= 0)
+			return -1;
+		return 0;
 	}
 
 	int get_listenfd(){
@@ -308,7 +308,8 @@ public:
 					if(verb == "exit")
 						return -1;
 					spar->parse_string(verb, id);
-					t->send_message(spar->get_message());
+					int rc = t->send_message(spar->get_message());
+					if(rc == -1)return -1;
 				}
 			}
 		}
