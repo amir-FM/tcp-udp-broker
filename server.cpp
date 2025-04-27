@@ -46,9 +46,9 @@ public:
 				while(getline(str, toks, '/')){
 					if(tokr == toks)
 						break;
-					if(tokr != toks)
-						return 0;
 				}
+				if(tokr != toks)
+					return 0;
 			}else if(tokr != "+"){
 				if(tokr != toks)
 					return 0;
@@ -419,7 +419,7 @@ class TCP_Connect{
 public:
 	TCP_Connect(){};
 
-	TCP_Connect(int listenfd, Subscribe_Message_Parser &p){
+	TCP_Connect(int listenfd, Subscribe_Message_Parser *p){
 		this->listenfd = listenfd;
 		this->p = p;
 	}
@@ -435,21 +435,21 @@ public:
 		int rc = recv_smess(newfd);
 		if(rc < 0)return -1;
 
-		p.set_message(get_smess(), newfd);
-		rc = p.login();
+		p->set_message(get_smess(), newfd);
+		rc = p->login();
 		if(rc < 0){
 			close_connection(newfd, 0);
 			return -1;
 		}
 
-		cout << "New client " << p.get_clid() << " connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << ".\n";
+		cout << "New client " << p->get_clid() << " connected from " << inet_ntoa(cli_addr.sin_addr) << ":" << ntohs(cli_addr.sin_port) << ".\n";
 
 		return newfd;
 	}
 
 	void close_connection(int fd, int print){
 		close(fd);
-		if(print)cout << "Client " << p.get_clid() << " disconnected.\n";
+		if(print)cout << "Client " << p->get_clid() << " disconnected.\n";
 	}
 
 	int send_topic_message(int fd, struct topic_message message){
@@ -480,7 +480,7 @@ public:
 	}
 	
 private:
-	Subscribe_Message_Parser p;
+	Subscribe_Message_Parser *p;
 	int listenfd;
 	struct subscribe_message smess;
 };
@@ -489,7 +489,7 @@ class Multiplexer{
 public:
 	Multiplexer(int tcpfd, int udpfd){
 		this->p = new Subscribe_Message_Parser();
-		this->t = new TCP_Connect(tcpfd, *p);
+		this->t = new TCP_Connect(tcpfd, p);
 		this->u = new UDP_Connect(udpfd);
 		this->tcpfd = tcpfd;
 		this->udpfd = udpfd;
