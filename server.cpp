@@ -360,6 +360,20 @@ public:
 		this->listenfd = listenfd;
 	}
 
+	//int recv_and_print(){
+	//	clean_message();
+
+	//	struct sockaddr_in cl_addr;
+	//	socklen_t clen = sizeof(cl_addr);
+
+	//	int rc = recvfrom(listenfd, &message, sizeof(struct udp_message), 0, (struct sockaddr *)&cl_addr, &clen);
+	//	
+	//	if(rc > 0)
+	//		cout << message.topic << " " << message.type << "\n" << message.data<< "\n------------------------------------\n\n";
+
+	//	return rc;
+	//}
+
 	int recv(){
 		clean_message();
 
@@ -498,6 +512,12 @@ public:
 		if(DEBUG)cout << "added: " << fd << endl;
 	}
 
+	//void remove_fd(int index){
+	//	int fd = poll_fds[index].fd;
+	//	poll_fds.erase(poll_fds.begin() + index);
+	//	if(DEBUG)cout << "Removed: " << fd << endl;
+	//}
+
 	void remove_fd(int fd){
 		int i = 0;
 		while(i < num_sockets){
@@ -523,6 +543,7 @@ public:
 						add_fd(newfd);
 				}else if(poll_fds[i].fd == udpfd){
 					u->recv();
+					//send_all(u->get_message());
 					send_subs();
 				}else if(poll_fds[i].fd == STDIN){
 					string s;
@@ -563,6 +584,16 @@ public:
 					logout_user(fd);
 			}
 		}
+	}
+
+	void send_all(struct UDP_Message message){
+		struct topic_message payload = wrap_message(message);
+
+		for(auto it : poll_fds)
+			if(it.fd != tcpfd && it.fd != udpfd && it.fd != STDIN){
+				int rc = t->send_topic_message(it.fd, payload);
+				if(rc == -1)logout_user(it.fd);
+			}
 	}
 
 	struct topic_message wrap_message(struct UDP_Message message){
