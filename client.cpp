@@ -8,7 +8,7 @@ using namespace std;
 class Client{
 public:
 	Client(string id, string server_ip, string port){
-		this->id = id;
+		this->id = id.substr(0, 10);
 		this->ip = server_ip;
 		this->port = stoi(port);
 	}
@@ -65,8 +65,8 @@ private:
 		serv_addr.sin_family = AF_INET;
 		serv_addr.sin_port = htons(port);
 
-		int rc = inet_pton(AF_INET, (char*)&ip, &serv_addr.sin_addr.s_addr);
-		DIE(rc < 0, "inet_pton");
+		int rc = inet_pton(AF_INET, ip.data(), &serv_addr.sin_addr.s_addr);
+		DIE(rc <= 0, "inet_pton");
 	}
 
 	void login(){
@@ -225,10 +225,15 @@ private:
 
 class Subscribe_Message_Parser{
 public:
-	void parse_string(string verb, string id){
+	int parse_string(string verb, string id){
 		clean_message();
 		strncpy((char *)message.clid, id.data(), 11);
 		cin >> subject;
+		if(subject.size() > 50){
+			ERR(1, "topic too long");
+			can_print = 0;
+			return -1;
+		}
 		if(DEBUG)cout << "read: " << verb << " " << subject << endl;
 		can_print = 1;
 		if(verb == "subscribe"){
@@ -238,7 +243,9 @@ public:
 		}else{
 			can_print = 0;
 			ERR(1, "parse_string: invalid command");
+			return -1;
 		}
+		return 0;
 	}
 
 	struct subscribe_message get_message(){
@@ -298,10 +305,11 @@ public:
 	}
 
 	int check_events(){
+		int rc;
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
 				if(poll_fds[i].fd == tcpfd){
-					int rc = t->recv_message();
+					rc = t->recv_message();
 					if(rc == -1)return -1;
 					parser->parse_message(t->get_message());
 					cout << parser->get_result() << endl;
@@ -310,8 +318,8 @@ public:
 					cin >> verb;
 					if(verb == "exit")
 						return -1;
-					spar->parse_string(verb, id);
-					int rc = t->send_message(spar->get_message());
+					rc = spar->parse_string(verb, id);
+					if(!rc)rc = t->send_message(spar->get_message());
 					if(rc == -1)return -1;
 					spar->print_feedback();
 				}

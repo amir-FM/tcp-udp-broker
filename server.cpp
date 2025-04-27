@@ -450,7 +450,7 @@ public:
 	int recv_smess(int fd){
 		int rc = recv(fd, &smess, sizeof(smess), 0);
 		
-		ERR(rc <= 0, "failed to recv subscriber message");
+		ERR(rc < 0, "failed to recv subscriber message");
 		if(rc <= 0)
 			return -1;
 		return 0;

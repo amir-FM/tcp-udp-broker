@@ -14,7 +14,7 @@ struct topic_message {
 };
 
 struct subscribe_message {
-	uint8_t flag; // 0 - subscribe, 1 - unsubscribe, 2 - login;
+	uint8_t flag; // 0 - subscribe, 1 - unsubscribe, 2 - login
 	uint8_t clid[11];
 	uint8_t data[50];
 };
