@@ -12,10 +12,10 @@
 #include <poll.h>
 #include "helper.h"
 #include "protocols.h"
+#include "TCP_Client.h"
 
 using namespace std;
 
-#define DEBUG 0
 #define STDIN 0
 
 class Client{
@@ -86,43 +86,6 @@ private:
 	}
 };
 
-class TCP_Connect{
-public:
-	TCP_Connect(){};
-
-	TCP_Connect(int listenfd){
-		this->listenfd = listenfd;
-	}
-
-	int recv_message(){
-		int rc = recv(listenfd, &message, sizeof(struct topic_message), 0);
-		DIE(rc < 0, "recv");
-		
-		if(rc == 0)
-			return -1;
-		return 0;
-
-	}
-
-	void send_message(struct subscribe_message message){
-		int rc = send(listenfd, &message, sizeof(message), 0);
-		DIE(rc < 0, "send");
-		if(DEBUG)cout << "sent message\n";
-	}
-
-	int get_listenfd(){
-		return listenfd;
-	}
-	
-	struct topic_message get_message(){
-		return message;
-	}
-	
-private:
-	int listenfd;
-	struct topic_message message;
-
-};
 
 class Topic_Message_Parser {
 public:
@@ -238,42 +201,46 @@ public:
 	void parse_string(string verb, string id){
 		clean_message();
 		strncpy((char *)message.clid, id.data(), 11);
-		string subject;
 		cin >> subject;
 		if(DEBUG)cout << "read: " << verb << " " << subject << endl;
 		if(verb == "subscribe"){
 			subscribe(subject);
-			//TODO: de refacut aceasta parte
-			cout << "Subscribed to topic " << subject << endl;
 		}else if(verb == "unsubscribe"){
 			unsubscribe(subject);
-			//TODO: de refacut aceasta parte
-			cout << "Unsubscribed from topic " << subject << endl;
 		}
 	}
 
 	void subscribe(string s){
-		message.flag = 0;
+		flag = message.flag = 0;
 		strncpy((char *)message.data, s.data(), 50);
 	}
 
 	void unsubscribe(string s){
-		message.flag = 1;
+		flag = message.flag = 1;
 		strncpy((char *)message.data, s.data(), 50);
 	}
 
 	struct subscribe_message get_message(){
 		return message;
 	}
-private:
 
+	void get_feedback(){
+		if(flag)
+			cout << "Unsubscribed from topic " << subject << endl;
+		else
+			cout << "Subscribed to topic " << subject << endl;
+	}
+
+private:
+	int flag;
+	string subject;
 };
 
 class Multiplexer{
 public:
 	Multiplexer (){}
 	Multiplexer (int tcpfd, string id){
-		this->t = new TCP_Connect(tcpfd);
+		this->t = new TCP_Client(tcpfd);
 		this->parser = new Topic_Message_Parser();
 		this->spar = new Subscribe_Message_Parser();
 		this->tcpfd = tcpfd;
@@ -316,6 +283,7 @@ public:
 						return -1;
 					spar->parse_string(verb, id);
 					t->send_message(spar->get_message());
+					spar->get_feedback();
 				}
 			}
 		}
@@ -323,7 +291,7 @@ public:
 	}
 
 private:
-	TCP_Connect *t;
+	TCP_Client *t;
 	Topic_Message_Parser *parser;
 	Subscribe_Message_Parser *spar;
 	vector<struct pollfd> poll_fds;
