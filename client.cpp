@@ -87,7 +87,7 @@ public:
 
 	int recv_message(){
 		int rc = recv(listenfd, &message, sizeof(struct topic_message), 0);
-		DIE(rc < 0, "recv");
+		ERR(rc <= 0, "recv: server connection closed");
 		
 		if(rc == 0)
 			return -1;
@@ -98,6 +98,8 @@ public:
 	int send_message(struct subscribe_message message){
 		int rc = send(listenfd, &message, sizeof(message), 0);
 		if(DEBUG)cout << "sent message\n";
+		ERR(rc <= 0, "send: server connection closed");
+
 		if(rc <= 0)
 			return -1;
 		return 0;
@@ -173,7 +175,7 @@ private:
 			parse_string();
 			break;
 		defalut:
-			this->data = "ERROR WHILE PARSING";
+			ERR(1, "parse_data: error while parsing");
 		}
 	}
 
@@ -233,7 +235,10 @@ public:
 			subscribe(subject);
 		}else if(verb == "unsubscribe"){
 			unsubscribe(subject);
-		}else can_print = 0;
+		}else{
+			can_print = 0;
+			ERR(1, "parse_string: invalid command");
+		}
 	}
 
 	struct subscribe_message get_message(){

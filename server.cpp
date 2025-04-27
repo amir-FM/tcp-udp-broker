@@ -188,6 +188,7 @@ public:
 	int login(){
 		if(flag != 2){
 			if(DEBUG)cout << "Message not correct\n";
+			ERR(1, "login message not correct");
 			return -1;
 		}
 
@@ -353,6 +354,7 @@ public:
 		socklen_t clen = sizeof(cl_addr);
 
 		int rc = recvfrom(listenfd, &message, sizeof(struct UDP_Message), 0, (struct sockaddr *)&cl_addr, &clen);
+		ERR(rc <= 0, "recv from udp incorrectly");
 		
 		return rc;
 	}
@@ -435,6 +437,7 @@ public:
 		rc = send(fd, &message, sizeof(message), 0);
 
 		if(DEBUG)cout << "Sent message to " << fd << endl;
+		ERR(rc <= 0, "failed to send topic message");
 		if(rc <= 0)
 			return -1;
 		return 0;
@@ -447,6 +450,7 @@ public:
 	int recv_smess(int fd){
 		int rc = recv(fd, &smess, sizeof(smess), 0);
 		
+		ERR(rc <= 0, "failed to recv subscriber message");
 		if(rc <= 0)
 			return -1;
 		return 0;
@@ -483,6 +487,7 @@ public:
 	}
 
 	int check_events(){
+		int rc;
 		for(int i = 0; i < num_sockets; i++){
 			if(poll_fds[i].revents & POLLIN){
 				if(poll_fds[i].fd == tcpfd){
@@ -490,15 +495,16 @@ public:
 					if(newfd >= 0)
 						add_fd(newfd);
 				}else if(poll_fds[i].fd == udpfd){
-					u->recv();
-					send_subs();
+					rc = u->recv();
+					if(rc > 0)send_subs();
 				}else if(poll_fds[i].fd == STDIN){
 					string s;
 					cin >> s;
 					if(s == "exit")
 						return -1;
+					ERR(1, "invalid command");
 				}else{
-					int rc = t->recv_smess(poll_fds[i].fd);
+					rc = t->recv_smess(poll_fds[i].fd);
 					if(rc == -1){
 						logout_user(poll_fds[i].fd);
 						continue;
