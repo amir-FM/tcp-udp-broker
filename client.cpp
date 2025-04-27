@@ -5,11 +5,13 @@
 #include <map>
 #include <cstdint>
 #include <cstring>
+#include <unistd.h>
+#include <poll.h>
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unistd.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
-#include <poll.h>
 #include "helper.h"
 #include "protocols.h"
 
@@ -54,6 +56,10 @@ private:
 
 		tcpfd = socket(AF_INET, SOCK_STREAM, 0);
 		DIE(tcpfd < 0, "socket");
+
+		int enable = 1;
+		rc = setsockopt(tcpfd, IPPROTO_TCP, TCP_NODELAY, (char *)&enable, sizeof(int));
+		DIE(rc < 0, "setsockopt");
 
 		set_serv_addr();
 

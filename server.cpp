@@ -7,6 +7,7 @@
 #include <sstream>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <poll.h>
@@ -425,14 +426,18 @@ public:
 	}
 
 	int new_connection(){
+		int rc;
 		struct sockaddr_in cli_addr;
 		socklen_t cli_len = sizeof(cli_addr);
 
 		int newfd = accept(listenfd, (struct sockaddr *)&cli_addr, &cli_len);
 		DIE(newfd < 0, "accept");
 
+		int enable = 1;
+		rc = setsockopt(newfd, IPPROTO_TCP, TCP_NODELAY, (char *)&enable, sizeof(int));
+
 		//login
-		int rc = recv_smess(newfd);
+		rc = recv_smess(newfd);
 		if(rc < 0)return -1;
 
 		p->set_message(get_smess(), newfd);
