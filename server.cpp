@@ -1,16 +1,8 @@
-#include <iostream>
-#include <vector>
-#include <set>
-#include <map>
-#include <cstdint>
-#include <cstring>
 #include <sstream>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-#include <unistd.h>
 #include <arpa/inet.h>
-#include <poll.h>
 #include "helper.h"
 #include "protocols.h"
 
