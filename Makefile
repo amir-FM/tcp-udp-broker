@@ -1,10 +1,10 @@
 all: server subscriber
 
 server: server.cpp
-	g++ -g server.cpp -o server
+	g++ -g server.cpp helper.cpp -o server
 
-subscriber: client.cpp
-	g++ -g client.cpp -o subscriber
+subscriber: subscriber.cpp
+	g++ -g subscriber.cpp helper.cpp -o subscriber
 
 clean:
 	-rm server subscriber

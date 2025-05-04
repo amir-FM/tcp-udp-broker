@@ -434,7 +434,7 @@ public:
 	int send_topic_message(int fd, struct topic_message message){
 		int rc;
 
-		rc = send(fd, &message, sizeof(message), 0);
+		rc = send_all(fd, &message, sizeof(message), 0);
 
 		if(DEBUG)cout << "Sent message to " << fd << endl;
 		ERR(rc <= 0, "failed to send topic message");
@@ -448,7 +448,7 @@ public:
 	}
 
 	int recv_smess(int fd){
-		int rc = recv(fd, &smess, sizeof(smess), 0);
+		int rc = recv_all(fd, &smess, sizeof(smess), 0);
 		
 		ERR(rc < 0, "failed to recv subscriber message");
 		if(rc <= 0)
@@ -569,16 +569,6 @@ private:
 					logout_user(fd);
 			}
 		}
-	}
-
-	void send_all(struct UDP_Message message){
-		struct topic_message payload = wrap_message(message);
-
-		for(auto it : poll_fds)
-			if(it.fd != tcpfd && it.fd != udpfd && it.fd != STDIN){
-				int rc = t->send_topic_message(it.fd, payload);
-				if(rc == -1)logout_user(it.fd);
-			}
 	}
 
 	struct topic_message wrap_message(struct UDP_Message message){

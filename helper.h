@@ -33,4 +33,7 @@
     }                                                                          \
   } while (0)
 
+
+int send_all(int fd, void *buf, size_t len, int flags);
+int recv_all(int fd, void *buf, size_t len, int flags);
 #endif

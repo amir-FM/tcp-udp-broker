@@ -4,7 +4,6 @@
 
 using namespace std;
 
-
 class Client{
 public:
 	Client(string id, string server_ip, string port){
@@ -72,7 +71,7 @@ private:
 	void login(){
 		struct subscribe_message message = {.flag = 2};
 		strncpy((char *)message.clid, id.data(), id.size());
-		int rc = send(tcpfd, &message, sizeof(message), 0);
+		int rc = send_all(tcpfd, &message, sizeof(message), 0);
 		DIE(rc < 0, "send");
 	}
 };
@@ -86,7 +85,7 @@ public:
 	}
 
 	int recv_message(){
-		int rc = recv(listenfd, &message, sizeof(struct topic_message), 0);
+		int rc = recv_all(listenfd, &message, sizeof(struct topic_message), 0);
 		ERR(rc <= 0, "recv: server connection closed");
 		
 		if(rc == 0)
@@ -96,7 +95,7 @@ public:
 	}
 
 	int send_message(struct subscribe_message message){
-		int rc = send(listenfd, &message, sizeof(message), 0);
+		int rc = send_all(listenfd, &message, sizeof(message), 0);
 		if(DEBUG)cout << "sent message\n";
 		ERR(rc <= 0, "send: server connection closed");
 
